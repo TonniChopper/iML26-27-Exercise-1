@@ -1,7 +1,9 @@
 from iml_interpretability.data import Dataset, get_datasets, load_titanic
 from iml_interpretability.evaluate import evaluate
 from iml_interpretability.metric import (
-    INTERPRETABILITY_THRESHOLD,
+    GLOBAL_GREY_ZONE,
+    GLOBAL_INTERPRETABLE,
+    LOCAL_INTERPRETABLE,
     AverageDepth,
     Cases,
     Conditions,
@@ -12,11 +14,14 @@ from iml_interpretability.metric import (
     NumberOfLeaves,
     SimulationEffort,
     default_metrics,
+    interpretability_zone,
 )
 from iml_interpretability.models import get_models, model_family
 
 __all__ = [
-    "INTERPRETABILITY_THRESHOLD",
+    "GLOBAL_GREY_ZONE",
+    "GLOBAL_INTERPRETABLE",
+    "LOCAL_INTERPRETABLE",
     "AverageDepth",
     "Cases",
     "Conditions",
@@ -31,6 +36,7 @@ __all__ = [
     "evaluate",
     "get_datasets",
     "get_models",
+    "interpretability_zone",
     "load_titanic",
     "model_family",
 ]

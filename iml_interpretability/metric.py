@@ -176,8 +176,7 @@ class LocalLoad(InterpretabilityMetric):
 class GlobalLoad(InterpretabilityMetric):
     """Cases * LocalLoad: effort to understand the whole model. Lower = more interpretable.
 
-    This is our main metric. We consider a model interpretable if its global load is at most
-    :data:`INTERPRETABILITY_THRESHOLD` (motivated by the "7 +- 2" capacity of working memory).
+    This is our main metric. See :func:`interpretability_zone` for how we read its values.
     """
 
     def __init__(self, lam: float = DEFAULT_LAMBDA):
@@ -190,8 +189,21 @@ class GlobalLoad(InterpretabilityMetric):
         return effective_number_of_cases(model, X) * local
 
 
-#: Global load up to which we call a model interpretable.
-INTERPRETABILITY_THRESHOLD = 10.0
+#: Global load up to which the whole model is easy to understand ("fits on a sticky note").
+GLOBAL_INTERPRETABLE = 10.0
+#: Global load up to which the model can still be explained piece by piece (grey zone).
+GLOBAL_GREY_ZONE = 30.0
+#: Local load up to which one prediction is easy to explain (one rule fits into working memory, 7 +- 2).
+LOCAL_INTERPRETABLE = 7.0
+
+
+def interpretability_zone(global_load: float) -> str:
+    """Translate a global load into a verdict: ``"interpretable"``, ``"grey zone"`` or ``"not interpretable"``."""
+    if global_load <= GLOBAL_INTERPRETABLE:
+        return "interpretable"
+    if global_load <= GLOBAL_GREY_ZONE:
+        return "grey zone"
+    return "not interpretable"
 
 
 # --------------------------------------------------------------------------------------------------

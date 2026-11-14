@@ -78,9 +78,11 @@ How we find exceptions:
     Local Load  = Conditions + 2 × Exceptions     → effort to trace one prediction
     Global Load = Cases × Local Load              → effort to understand the whole model
 
-For both, **lower means more interpretable**. The Global Load can be read as "the number of conditions
-you have to keep in mind": the model has *Cases* typical situations, and each of them is described by
-about *Local Load* conditions.
+For both, **lower means more interpretable**. The Global Load can be read as **the length of the rule
+list** you would get if you wrote the model down as if-then rules: the model has *Cases* typical
+situations (rules), and each of them is described by about *Local Load* conditions. Note that a
+condition near the root of a tree appears in many rules, so it is counted several times. This is on
+purpose: to describe the whole model without the picture, you need all the rules.
 
 Exceptions count double, because they are harder to remember than normal conditions. The factor 2 is
 our choice. In section 4 we show that the ranking of models stays almost the same for 1 or 3.
@@ -102,10 +104,34 @@ A random forest with 100 trees of depth 3 on the same data:
 
 ### Threshold of interpretability
 
-Because the Global Load is measured in "conditions to keep in mind", we can relate it to the
-7 ± 2 limit of working memory. We use the upper end of this range plus a bit of slack and call a model
-**interpretable if its Global Load is at most 10**. This threshold is a hypothesis based on psychology,
-not something we measured with people (see section 5).
+There is no objective line between "interpretable" and "not interpretable". The answer depends on who
+has to understand what. So we use two thresholds, one for each question, and a grey zone instead of a
+hard cut.
+
+| Question | Measured by | Verdict |
+|---|---|---|
+| Can I explain **one prediction**? | Local Load | easy if ≤ 7 |
+| Can I explain **the whole model**? | Global Load | ≤ 10 interpretable · 10–30 grey zone · > 30 not interpretable |
+
+Why these numbers:
+
+- **Local Load ≤ 7.** One prediction is one rule, and you have to keep its conditions in mind at the
+  same time. Working memory holds about 7 ± 2 items (Miller, 1956), so here the classic number fits
+  directly.
+- **Global Load ≤ 10.** The Global Load is the length of the rule list, so "7 ± 2 items in memory" can't
+  be applied literally. We chose 10 because a list of about 4–5 rules with 2 conditions each still fits
+  "on a sticky note". We also calibrated it to the lecture, where a tree of depth 2 is shown as
+  interpretable and a tree of depth 10 is not: in our experiments, trees of depth 2 get a Global Load
+  of 4.5–7.3 and trees of depth 3 get 8–22, so 10 lies right between them.
+- **Grey zone 10–30.** Here the model can still be explained piece by piece, but not as a whole in one
+  go. Above 30 we call it not interpretable.
+
+The exact numbers are our choice. In section 3 we show that the order of models does not depend on
+them, only where the line is drawn.
+
+Example: a tree of depth 5 on our noisy data has a Local Load of about 4 (every single prediction is
+easy to explain) but a Global Load of 44 (nobody can describe all its rules at once). This matches the
+intuition that such a tree is "easy to follow, but hard to summarise".
 
 ---
 
@@ -153,31 +179,61 @@ scikit-learn; Titanic is added automatically if OpenML is reachable).
 
 ### Where is the threshold?
 
-The most complex model of each family that is still interpretable (Global Load ≤ 10):
+For every dataset and model family, the most complex model that still reaches each verdict
+(`results/threshold.csv`):
 
-| Dataset | Decision tree | Random forest | Gradient boosting | Accuracy of that tree | Best accuracy of any model |
-|---|---|---|---|---|---|
-| iris | unlimited depth (9.1) | 1 tree (7.6) | none | 0.97 | 1.00 |
-| wine | depth 2 (6.2) | none | none | 0.76 | 1.00 |
-| breast_cancer | depth 3 (9.5) | 1 tree (8.9) | 1 round (5.6) | 0.92 | 0.94 |
-| noisy_2class | depth 2 (4.7) | none | 1 round (4.7) | 0.80 | 0.86 |
-| noisy_4class | depth 2 (7.3) | none | none | 0.50 | 0.65 |
+| Dataset | Family | Interpretable (≤ 10) | Grey zone (≤ 30) | Easy prediction (Local ≤ 7) |
+|---|---|---|---|---|
+| iris | tree | unlimited depth | unlimited depth | unlimited depth |
+| iris | forest | 1 tree | 1 tree | 1 tree |
+| iris | boosting | none | 1 round | 1 round |
+| wine | tree | depth 2 | unlimited depth | unlimited depth |
+| wine | forest | none | 1 tree | 1 tree |
+| wine | boosting | none | none | 1 round |
+| breast_cancer | tree | depth 3 | unlimited depth | unlimited depth |
+| breast_cancer | forest | 1 tree | 1 tree | 1 tree |
+| breast_cancer | boosting | 1 round | 3 rounds | 3 rounds |
+| noisy_2class | tree | depth 2 | depth 4 | depth 6 |
+| noisy_2class | forest | none | 1 tree | 1 tree |
+| noisy_2class | boosting | 1 round | 1 round | 3 rounds |
+| noisy_4class | tree | depth 2 | depth 3 | depth 6 |
+| noisy_4class | forest | none | 1 tree | 1 tree |
+| noisy_4class | boosting | none | none | none |
+
+Accuracy of the last interpretable tree compared to the best model on the dataset: iris 0.97 vs. 1.00,
+wine 0.76 vs. 1.00, breast cancer 0.92 vs. 0.94, noisy_2class 0.80 vs. 0.86, noisy_4class 0.50 vs. 0.65.
 
 What we see:
 
-- **For single trees the threshold is at depth 2–3.** This matches the lecture, where a tree of depth 2
-  is shown as interpretable and a tree of depth 10 as not. Iris is the exception: its full tree is
-  small anyway (Global Load 9.1), so even the unlimited tree is interpretable.
-- **Ensembles stop being interpretable almost immediately.** A random forest is only interpretable with
-  a single tree, gradient boosting with at most one round. Already 3 trees push the Global Load far
-  above the threshold (e.g. 39 on iris, 194 on wine).
+- **For single trees the model as a whole stops being interpretable at depth 2–3.** This matches the
+  lecture. On clean data (iris, wine, breast cancer) even the unlimited tree stays in the grey zone,
+  because it is small anyway: the data is easy to separate.
+- **Single predictions stay explainable much longer.** On the noisy data, trees up to depth 6 still
+  have a Local Load ≤ 7. This is the difference between "I can follow every decision" and "I can
+  describe the whole model".
+- **Ensembles stop being interpretable almost immediately.** A random forest is only interpretable (or
+  in the grey zone) with a single tree, gradient boosting with 1–3 rounds. A forest of only 3 trees is
+  already above 30 on every dataset (e.g. 39 on iris, 194 on wine).
 - **Interpretability costs accuracy, but how much depends on the data.** On breast cancer the
   interpretable tree loses only 2–3 points of accuracy. On wine it loses 24 points.
 - **Multiclass gradient boosting is especially expensive**, because scikit-learn builds one tree per
   class in every round. With 4 classes, one round is already 4 trees (Global Load 210).
 
-Plots: `results/global_load_per_model.png` (Global Load of every model, log scale) and
-`results/accuracy_vs_global_load.png` (accuracy against Global Load, interpretable region shaded).
+**Does the verdict depend on the exact threshold?** The last decision tree that counts as interpretable,
+for different values of the Global Load threshold:
+
+| Dataset | ≤ 5 | ≤ 10 | ≤ 20 | ≤ 50 |
+|---|---|---|---|---|
+| iris | depth 2 | unlimited | unlimited | unlimited |
+| wine | depth 1 | depth 2 | unlimited | unlimited |
+| breast_cancer | depth 1 | depth 3 | unlimited | unlimited |
+| noisy_2class | depth 2 | depth 2 | depth 3 | depth 5 |
+| noisy_4class | depth 1 | depth 2 | depth 2 | depth 4 |
+
+The threshold only moves the line by one or two depth levels; the order of models stays the same.
+
+Plots: `results/global_load_per_model.png` (Global Load of every model, log scale, with both lines) and
+`results/accuracy_vs_global_load.png` (accuracy against Global Load, interpretable region and grey zone shaded).
 
 ### What the parts tell us
 
@@ -239,8 +295,8 @@ at depth 2 (see section 5).
 ## 5. Limitations
 
 - **No experiment with people.** The task does not require a human study for a metric that is not
-  LLM-based, and we did not have time for one. The threshold of 10 is motivated by the "7 ± 2" limit of
-  working memory and matches the intuition from the lecture, but it is not measured. The parts of our
+  LLM-based, and we did not have time for one. The thresholds (7 for one prediction, 10 and 30 for the
+  whole model) are motivated by working memory and calibrated to the lecture, but not measured. The parts of our
   metric are based on findings from user studies (Piltaver et al. 2016 found that the depth of leaves
   matters most for how well people understand trees). A small study where people trace and describe
   trees of different Global Load would be the natural next step. A group member already started a
@@ -258,8 +314,8 @@ at depth 2 (see section 5).
   anyway.
 - **Only structure, no meaning.** The metric does not know what the features mean. `age < 30` and a
   condition on an obscure engineered feature count the same.
-- **Design choices.** The weight λ = 2, the threshold of 10 and ε = 0.001 are chosen by us. We checked
-  λ (section 4), but not the other two.
+- **Design choices.** The weight λ = 2, the thresholds and ε = 0.001 are chosen by us. We checked λ
+  (section 4) and the Global Load threshold (section 3), but not ε.
 
 ---
 
@@ -313,8 +369,8 @@ The experiment takes less than a minute. It writes:
 
 | File | Content |
 |---|---|
-| `results/scores.csv` | accuracy and all metrics for every (dataset, model) |
-| `results/threshold.csv` | most complex interpretable model per dataset and family |
+| `results/scores.csv` | accuracy, all metrics and the verdict (zone) for every (dataset, model) |
+| `results/threshold.csv` | most complex model per dataset and family for each verdict |
 | `results/lambda_sensitivity.csv` | rank correlations for λ = 1, 2, 3 |
 | `results/metric_correlations.csv` | correlation of Global Load with the baselines |
 | `results/global_load_per_model.png` | Global Load per model (log scale) |
@@ -327,11 +383,12 @@ skipped with a message and the other datasets are still evaluated.
 ### Using the metric on your own model
 
 ```python
-from iml_interpretability import Dataset, GlobalLoad, LocalLoad
+from iml_interpretability import Dataset, GlobalLoad, LocalLoad, interpretability_zone
 
 data = Dataset(name="my_data", X=X_train, y=y_train)   # X_train: pandas DataFrame, numeric
 model = ...fit(X_train, y_train)                       # DecisionTree / RandomForest / GradientBoosting classifier
-print(GlobalLoad().score(model, data), LocalLoad().score(model, data))
+global_load = GlobalLoad().score(model, data)
+print(global_load, interpretability_zone(global_load), LocalLoad().score(model, data))
 ```
 
 ---
@@ -357,12 +414,12 @@ presentation/
 
 ## AI statement
 
-> **TODO (group): check and adapt this statement.**
+> **TODO (group): check and adapt this statement before submitting.**
 
 We used Claude (Anthropic, Claude Opus 5.5) during this exercise. We used it to understand the task,
 to brainstorm metric ideas and check whether similar metrics already exist in the literature, to
-generate code, and to draft this README. The idea to combine the
+implement the metric, the experiments and the tests, and to draft this README. The idea to combine the
 effective number of cases with the direction check, and the distinction between tracing a prediction
 and understanding the model, came up in our discussions with it. We reviewed the code and the results,
 ran the experiments ourselves, and checked that the numbers in this README match our results files.
-We take full responsibility for the content of this repository.
+[Describe here how you made the slides.] We take full responsibility for the content of this repository.

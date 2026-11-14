@@ -7,7 +7,7 @@ Usage::
 Outputs:
 
 * ``results/scores.csv``              – accuracy and all metrics for every (dataset, model)
-* ``results/threshold.csv``           – most complex interpretable model per dataset and model family
+* ``results/threshold.csv``           – most complex model per dataset and family in each zone
 * ``results/lambda_sensitivity.csv``  – does the ranking of models change for lambda = 1, 2, 3?
 * ``results/metric_correlations.csv`` – how strongly our metric agrees with simple baselines
 * ``results/*.png``                   – plots used in the presentation
@@ -26,11 +26,14 @@ import pandas as pd
 from scipy.stats import spearmanr
 
 from iml_interpretability import (
-    INTERPRETABILITY_THRESHOLD,
+    GLOBAL_GREY_ZONE,
+    GLOBAL_INTERPRETABLE,
+    LOCAL_INTERPRETABLE,
     default_metrics,
     evaluate,
     get_datasets,
     get_models,
+    interpretability_zone,
     model_family,
 )
 
@@ -44,27 +47,35 @@ def run_scores() -> pd.DataFrame:
     models = get_models(seed=SEED)
     scores = evaluate(datasets=get_datasets(), models=models, metrics=default_metrics(), seed=SEED)
     scores.insert(2, "family", scores["model"].map(model_family))
+    scores["zone"] = scores["global_load"].map(interpretability_zone)
+    scores["prediction_easy"] = scores["local_load"] <= LOCAL_INTERPRETABLE
     # Keep the order of get_models() as complexity order inside each family.
     scores["complexity_rank"] = scores["model"].map({name: i for i, name in enumerate(models)})
     return scores
 
 
+def _last_model(group: pd.DataFrame, mask: pd.Series) -> str:
+    """Name of the most complex model in ``group`` (sorted by complexity) for which ``mask`` holds."""
+    chosen = group[mask]
+    return chosen.iloc[-1]["model"] if len(chosen) else "none"
+
+
 def threshold_table(scores: pd.DataFrame) -> pd.DataFrame:
-    """Per dataset and family: the most complex model that is still below the threshold."""
+    """Per dataset and family: the most complex model that still reaches each verdict."""
     rows = []
     for (dataset, family), group in scores.groupby(["dataset", "family"], sort=False):
         group = group.sort_values("complexity_rank")
-        interpretable = group[group["global_load"] <= INTERPRETABILITY_THRESHOLD]
-        best_overall = scores.loc[scores["dataset"] == dataset, "accuracy"].max()
-        last = interpretable.iloc[-1] if len(interpretable) else None
+        interpretable = group["global_load"] <= GLOBAL_INTERPRETABLE
+        best = group[interpretable].iloc[-1] if interpretable.any() else None
         rows.append(
             {
                 "dataset": dataset,
                 "family": family,
-                "last_interpretable_model": last["model"] if last is not None else "none",
-                "its_global_load": last["global_load"] if last is not None else np.nan,
-                "its_accuracy": last["accuracy"] if last is not None else np.nan,
-                "best_accuracy_any_model": best_overall,
+                "last_interpretable": _last_model(group, interpretable),
+                "last_grey_zone": _last_model(group, group["global_load"] <= GLOBAL_GREY_ZONE),
+                "last_easy_prediction": _last_model(group, group["local_load"] <= LOCAL_INTERPRETABLE),
+                "accuracy_last_interpretable": best["accuracy"] if best is not None else np.nan,
+                "best_accuracy_any_model": scores.loc[scores["dataset"] == dataset, "accuracy"].max(),
             }
         )
     return pd.DataFrame(rows)
@@ -81,7 +92,7 @@ def lambda_sensitivity(scores: pd.DataFrame, lambdas=(1.0, 2.0, 3.0)) -> pd.Data
                 if a < b:
                     row[f"spearman_lam{a:g}_vs_lam{b:g}"] = spearmanr(loads[a], loads[b]).statistic
         row["interpretable_models_per_lambda"] = ", ".join(
-            f"lam{lam:g}: {int((loads[lam] <= INTERPRETABILITY_THRESHOLD).sum())}" for lam in lambdas
+            f"lam{lam:g}: {int((loads[lam] <= GLOBAL_INTERPRETABLE).sum())}" for lam in lambdas
         )
         rows.append(row)
     return pd.DataFrame(rows)
@@ -106,14 +117,18 @@ def plot_load_per_model(scores: pd.DataFrame) -> None:
         group = scores[scores["dataset"] == dataset].sort_values("complexity_rank")
         colors = group["family"].map(FAMILY_COLORS)
         ax.bar(group["model"], group["global_load"], color=colors)
-        ax.axhline(INTERPRETABILITY_THRESHOLD, color="black", linestyle="--", linewidth=1)
+        ax.axhline(GLOBAL_INTERPRETABLE, color="black", linestyle="--", linewidth=1)
+        ax.axhline(GLOBAL_GREY_ZONE, color="black", linestyle=":", linewidth=1)
         ax.set_yscale("log")
         ax.set_ylabel("global load")
         ax.set_title(dataset, loc="left", fontsize=10)
     np.atleast_1d(axes)[-1].tick_params(axis="x", rotation=60)
     handles = [plt.Rectangle((0, 0), 1, 1, color=c) for c in FAMILY_COLORS.values()]
     fig.legend(handles, FAMILY_LABELS.values(), loc="upper right", ncol=3, frameon=False)
-    title = f"Global load per model (log scale, dashed = threshold {INTERPRETABILITY_THRESHOLD:g})"
+    title = (
+        f"Global load per model (log scale; dashed = {GLOBAL_INTERPRETABLE:g}, dotted = {GLOBAL_GREY_ZONE:g}, "
+        "in between = grey zone)"
+    )
     fig.suptitle(title, x=0.01, ha="left")
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     fig.savefig(RESULTS / "global_load_per_model.png", dpi=150)
@@ -130,8 +145,8 @@ def plot_accuracy_vs_load(scores: pd.DataFrame) -> None:
         for family, sub in group.groupby("family"):
             sub = sub.sort_values("complexity_rank")
             ax.plot(sub["global_load"], sub["accuracy"], "o-", color=FAMILY_COLORS[family], label=FAMILY_LABELS[family])
-        ax.axvline(INTERPRETABILITY_THRESHOLD, color="black", linestyle="--", linewidth=1)
-        ax.axvspan(ax.get_xlim()[0] if ax.get_xlim()[0] > 0 else 1, INTERPRETABILITY_THRESHOLD, color="0.92")
+        ax.axvspan(1, GLOBAL_INTERPRETABLE, color="0.85", zorder=0)
+        ax.axvspan(GLOBAL_INTERPRETABLE, GLOBAL_GREY_ZONE, color="0.94", zorder=0)
         ax.set_xscale("log")
         ax.set_xlabel("global load (log)")
         ax.set_ylabel("test accuracy")
@@ -139,7 +154,7 @@ def plot_accuracy_vs_load(scores: pd.DataFrame) -> None:
     for ax in list(axes.flat)[len(datasets) :]:
         ax.axis("off")
     axes.flat[0].legend(fontsize=8)
-    fig.suptitle("Accuracy vs. global load (grey = interpretable region)", x=0.01, ha="left")
+    fig.suptitle("Accuracy vs. global load (dark = interpretable, light = grey zone)", x=0.01, ha="left")
     fig.tight_layout()
     fig.savefig(RESULTS / "accuracy_vs_global_load.png", dpi=150)
     plt.close(fig)
@@ -181,7 +196,7 @@ def main() -> None:
     plot_accuracy_vs_load(scores)
     plot_tree_components(scores)
 
-    columns = ["dataset", "model", "accuracy", "cases", "conditions", "exceptions", "local_load", "global_load"]
+    columns = ["dataset", "model", "accuracy", "cases", "conditions", "exceptions", "local_load", "global_load", "zone"]
     print(scores[columns].round(3).to_string(index=False))
     for name, table in tables.items():
         print(f"\n=== {name}")
