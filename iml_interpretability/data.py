@@ -3,8 +3,8 @@
 Every dataset is returned as a :class:`Dataset` with numeric, imputed features so that all models in
 :mod:`iml_interpretability.models` can be fit on it directly.
 
-We use four small, well-known datasets that ship with scikit-learn (no download needed), two synthetic
-datasets with label noise, and Titanic from OpenML (downloaded once and cached in ``data/``).
+We use three small, well-known datasets that ship with scikit-learn (no download needed) and two synthetic
+datasets with label noise. Titanic from OpenML is available as an option but not used by default.
 """
 
 from __future__ import annotations
@@ -92,11 +92,11 @@ def make_noisy(n_classes: int = 2, seed: int = 0) -> Dataset:
     return Dataset(name=f"noisy_{n_classes}class", X=X, y=pd.Series(y, name="target"))
 
 
-def get_datasets(include_openml: bool = True) -> list[Dataset]:
+def get_datasets(include_openml: bool = False) -> list[Dataset]:
     """All datasets used in our experiments.
 
-    :param include_openml: Also load Titanic from OpenML. If the download fails (e.g. no internet),
-        Titanic is skipped with a message.
+    :param include_openml: Also load Titanic from OpenML (not used in our reported results). If the
+        download fails (e.g. no internet), Titanic is skipped with a message.
     """
     datasets = [load_iris(), load_wine(), load_breast_cancer(), make_noisy(2), make_noisy(4)]
     if include_openml:
