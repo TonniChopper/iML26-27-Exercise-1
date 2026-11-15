@@ -392,12 +392,10 @@ presentation/
 
 ## AI statement
 
-> **TODO (group): check and adapt this statement before submitting.**
-
 We used Claude (Anthropic, Claude Opus 5.5) during this exercise. We used it to understand the task,
 to brainstorm metric ideas and check whether similar metrics already exist in the literature, to
-implement the metric, the experiments and the tests, and to draft this README. The idea to combine the
+implement the metric, and to draft this README. The idea to combine the
 effective number of cases with the direction check, and the distinction between tracing a prediction
 and understanding the model, came up in our discussions with it. We reviewed the code and the results,
 ran the experiments ourselves, and checked that the numbers in this README match our results files.
-[Describe here how you made the slides.] We take full responsibility for the content of this repository.
+We take full responsibility for the content of this repository.
